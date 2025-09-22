@@ -1,0 +1,8 @@
+{
+  "name": "n8n-stagehand-scraper",
+  "version": "1.0.0",
+  "dependencies": {
+    "@browserbasehq/stagehand": "^2.4.3",
+    "zod": "^3.23.8"
+  }
+}
