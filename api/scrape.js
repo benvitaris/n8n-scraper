@@ -23,8 +23,9 @@ export default async function handler(req, res) {
         modelName: "google/gemini-2.5-flash",
         modelClientOptions: { apiKey: GOOGLE_API_KEY },
         disablePino: true,
+        // --- CORRECTED CONFIGURATION ---
+        // We still keep the other settings, just remove the 'proxies' line.
         browserbaseSessionCreateParams: {
-            proxies: true,
             browserSettings: {
                 blockAds: true,
             },
@@ -38,33 +39,33 @@ export default async function handler(req, res) {
         console.log(`Navigating to ${url}...`);
         await page.goto(url, { waitUntil: 'networkidle' });
 
-        // --- NEW: TWO-STEP DISMISSAL LOGIC (MIMICKING DIRECTOR.AI) ---
+        // --- TWO-STEP DISMISSAL LOGIC REMAINS THE SAME ---
         
-        // Step 1: Handle the Cookie/Privacy Consent Banner
+        // Step 1: Handle Cookie/Privacy Consent Banner
         try {
-            console.log("Step 1/2: Attempting to click 'Accept' on the cookie banner...");
+            console.log("Step 1/2: Attempting to click 'Accept' on cookie banner...");
             await page.act("click the Accept button", { timeoutMs: 10000 });
             console.log("Cookie banner dismissed.");
-            await page.waitForTimeout(2000); // Wait for the page to react
+            await page.waitForTimeout(2000);
         } catch (error) {
-            console.log("Cookie banner was not found or couldn't be clicked, proceeding...");
+            console.log("Cookie banner not found, proceeding...");
         }
 
-        // Step 2: Handle the Registration/Newsletter Pop-up Wall
+        // Step 2: Handle Registration Pop-up Wall
         try {
             console.log("Step 2/2: Attempting to 'Dismiss' the registration wall...");
             await page.act("click the Dismiss button", { timeoutMs: 10000 });
             console.log("Registration wall dismissed.");
-            await page.waitForTimeout(2000); // Wait for the content to fully load
+            await page.waitForTimeout(2000);
         } catch (error) {
-            console.log("Registration wall was not found or couldn't be clicked, proceeding...");
+            console.log("Registration wall not found, proceeding...");
         }
         
-        // --- ROBUST SCROLLING LOGIC ---
+        // --- SCROLLING AND EXTRACTION LOGIC REMAINS THE SAME ---
         const scrollCount = 8;
         const scrollDelay = 1500;
 
-        console.log(`Scrolling ${scrollCount} times to load the full page...`);
+        console.log(`Scrolling ${scrollCount} times...`);
         for (let i = 0; i < scrollCount; i++) {
             await page.act("scroll down");
             await page.waitForTimeout(scrollDelay);
