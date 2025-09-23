@@ -2,7 +2,7 @@
   "name": "n8n-stagehand-scraper",
   "version": "1.0.0",
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^2.4.3",
