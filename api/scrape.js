@@ -2,7 +2,6 @@
 const { Stagehand } = require('@browserbasehq/stagehand');
 
 export default async function handler(req, res) {
-    // Vercel security: Only allow POST requests
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
@@ -13,8 +12,6 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'URL is required in the request body.' });
     }
     
-    // --- CONFIGURATION ---
-    // These are read from Vercel's Environment Variables for security
     const BROWSERBASE_API_KEY = process.env.BROWSERBASE_API_KEY;
     const BROWSERBASE_PROJECT_ID = process.env.BROWSERBASE_PROJECT_ID;
     const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
@@ -26,6 +23,12 @@ export default async function handler(req, res) {
         modelName: "google/gemini-2.5-flash",
         modelClientOptions: { apiKey: GOOGLE_API_KEY },
         disablePino: true,
+        browserbaseSessionCreateParams: {
+            proxies: true,
+            browserSettings: {
+                blockAds: true,
+            },
+        },
     });
     
     try {
@@ -33,41 +36,59 @@ export default async function handler(req, res) {
         const page = stagehand.page;
         
         console.log(`Navigating to ${url}...`);
-        await page.goto(url, { waitUntil: 'domcontentloaded' }); // Wait for the initial page to be ready
+        await page.goto(url, { waitUntil: 'networkidle' });
 
-        // --- NEW: SCROLLING LOGIC TO LOAD ALL CONTENT ---
-        // This mimics a user scrolling down the page to trigger lazy-loading,
-        // just like the successful Director.ai example.
-        const scrollCount = 12; // How many times we scroll down. Increase if content is still missed on very long pages.
-        const scrollDelay = 1500; // Time in milliseconds to wait between scrolls for content to load.
+        // --- NEW: TWO-STEP DISMISSAL LOGIC (MIMICKING DIRECTOR.AI) ---
+        
+        // Step 1: Handle the Cookie/Privacy Consent Banner
+        try {
+            console.log("Step 1/2: Attempting to click 'Accept' on the cookie banner...");
+            await page.act("click the Accept button", { timeoutMs: 10000 });
+            console.log("Cookie banner dismissed.");
+            await page.waitForTimeout(2000); // Wait for the page to react
+        } catch (error) {
+            console.log("Cookie banner was not found or couldn't be clicked, proceeding...");
+        }
+
+        // Step 2: Handle the Registration/Newsletter Pop-up Wall
+        try {
+            console.log("Step 2/2: Attempting to 'Dismiss' the registration wall...");
+            await page.act("click the Dismiss button", { timeoutMs: 10000 });
+            console.log("Registration wall dismissed.");
+            await page.waitForTimeout(2000); // Wait for the content to fully load
+        } catch (error) {
+            console.log("Registration wall was not found or couldn't be clicked, proceeding...");
+        }
+        
+        // --- ROBUST SCROLLING LOGIC ---
+        const scrollCount = 8;
+        const scrollDelay = 1500;
 
         console.log(`Scrolling ${scrollCount} times to load the full page...`);
         for (let i = 0; i < scrollCount; i++) {
             await page.act("scroll down");
-            await page.waitForTimeout(scrollDelay); // Give the page time to load new content
-            console.log(`Scrolled ${i + 1}/${scrollCount}`);
+            await page.waitForTimeout(scrollDelay);
         }
         console.log("Finished scrolling.");
 
-        // --- NEW: REFINED EXTRACTION INSTRUCTION ---
-        // This new instruction is more specific, telling the AI to grab everything now that it's all loaded.
         const instruction = `Extract the complete article content from this fully loaded page. This includes the main title, all subheadings, paragraphs, lists, key takeaways, and all other text in the article's body. Ensure the formatting, like paragraphs and line breaks, is preserved to maintain readability. Exclude sidebars, navigation menus, ads, and footers.`;
         
-        console.log("Extracting content with refined instruction...");
+        console.log("Extracting content...");
         const { extraction } = await page.extract(instruction);
         
         await stagehand.close();
     
-        // Send a successful response back to N8N
+        if (!extraction || extraction.trim() === "") {
+             return res.status(500).json({ error: 'Extraction resulted in empty content. The page might be protected or structured in an unexpected way.' });
+        }
+        
         res.status(200).json({ scraped_content: extraction });
     
     } catch (error) {
         console.error(`Failed to scrape ${url}:`, error);
-        // Ensure stagehand is closed even if an error occurs
         if (stagehand) {
             await stagehand.close();
         }
-        // Send an error response back to N8N
         res.status(500).json({ error: error.message });
     }
 }
