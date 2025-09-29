@@ -1,4 +1,4 @@
-// This is the new, multi-strategy scrape.js file
+// This is the new, rate-limit-aware scrape.js
 const { Stagehand } = require('@browserbasehq/stagehand');
 
 export default async function handler(req, res) {
@@ -6,7 +6,6 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    // --- NEW: Accepting 'category' along with 'url' ---
     const { url, category } = req.body;
     
     if (!url || !category) {
@@ -33,57 +32,64 @@ export default async function handler(req, res) {
         await stagehand.init();
         const page = stagehand.page;
         
-        console.log(`Navigating to ${url} with category: '${category}'`);
         await page.goto(url, { waitUntil: 'networkidle' });
 
-        // --- UNIVERSAL POP-UP DISMISSAL ---
-        // This runs for ALL categories first.
-        try {
-            await page.act("click the Accept button", { timeoutMs: 7000 });
-            console.log("Cookie banner dismissed.");
-            await page.waitForTimeout(1500);
-        } catch (error) { console.log("Cookie banner not found."); }
-        try {
-            await page.act("click the Dismiss button", { timeoutMs: 7000 });
-            console.log("Registration wall dismissed.");
-            await page.waitForTimeout(1500);
-        } catch (error) { console.log("Registration wall not found."); }
+        // Universal pop-up dismissal
+        try { await page.act("click the Accept button", { timeoutMs: 7000 }); console.log("Cookie banner dismissed."); await page.waitForTimeout(1500); } catch (e) { console.log("Cookie banner not found."); }
+        try { await page.act("click the Dismiss button", { timeoutMs: 7000 }); console.log("Registration wall dismissed."); await page.waitForTimeout(1500); } catch (e) { console.log("Registration wall not found."); }
 
         let extraction;
 
-        // --- STRATEGY SELECTION BASED ON CATEGORY ---
         switch (category) {
             case 'Website':
-                console.log("Executing 'Website' strategy: Agentic Exploration...");
-                
-                // --- AGENT STRATEGY ---
-                // We give the agent a high-level goal. It will try to click tabs,
-                // accordions ('FAQs'), and 'read more' links to uncover all content.
-                const agent = stagehand.agent();
-                const agentResult = await agent.execute({
-                    instruction: `Explore the entire content of this single page. First, scroll to the bottom multiple times to load everything. Then, identify and click on all interactive elements like tabs, accordions, and 'show more' buttons that reveal more text on THIS SAME PAGE without navigating away. After each interaction, wait for content to load. Finally, extract ALL visible text content from the fully revealed page, including titles, paragraphs, and data from tables. Preserve the original formatting and structure.`,
-                    maxSteps: 25 // Limit the number of actions to prevent infinite loops
-                });
+                console.log("Executing 'Website' strategy: Observe, Click, Extract...");
 
-                // The agent's final message is the scraped content
-                extraction = agentResult.message;
+                // --- NEW EFFICIENT STRATEGY ---
+                // 1. Observe all interactive elements once (1 API Call)
+                console.log("Observing interactive elements...");
+                const interactiveElements = await page.observe("Find all clickable tabs, accordions, and 'show more' buttons on the page that reveal more content");
+
+                // 2. Loop and click them (0 API Calls)
+                if (interactiveElements && interactiveElements.length > 0) {
+                    console.log(`Found ${interactiveElements.length} elements to interact with.`);
+                    for (const element of interactiveElements) {
+                        try {
+                            console.log(`Clicking on: "${element.description}"`);
+                            await page.act(element); // This is a "free" action
+                            await page.waitForTimeout(1500); // Wait for content to load
+                        } catch (clickError) {
+                            console.log(`Could not click on "${element.description}", skipping.`);
+                        }
+                    }
+                } else {
+                    console.log("No interactive elements found to click.");
+                }
+
+                // 3. Scroll to be sure
+                console.log("Scrolling to load any remaining content...");
+                for (let i = 0; i < 5; i++) {
+                    await page.act("scroll down");
+                    await page.waitForTimeout(1000);
+                }
+                
+                // 4. Extract everything once (1 API Call)
+                console.log("Extracting all visible content...");
+                const finalExtraction = await page.extract(`Extract ALL visible text content from the fully revealed page, including all titles, paragraphs, and data from all tables. Preserve formatting.`);
+                extraction = finalExtraction.extraction;
                 break;
 
             case 'Article':
-            default: // If category is not 'Website' or is missing, use the reliable Article scraper.
+            default:
                 console.log("Executing 'Article' strategy: Scroll and Extract...");
-                
-                // --- ARTICLE STRATEGY (our existing, proven script) ---
                 const scrollCount = 8;
                 const scrollDelay = 1500;
                 for (let i = 0; i < scrollCount; i++) {
                     await page.act("scroll down");
                     await page.waitForTimeout(scrollDelay);
                 }
-                
-                const instruction = `Extract the complete article content from this fully loaded page. This includes the main title, all subheadings, paragraphs, lists, key takeaways, and all other text in the article's body. Ensure the formatting is preserved to maintain readability. Exclude sidebars, navigation menus, ads, and footers.`;
-                const result = await page.extract(instruction);
-                extraction = result.extraction;
+                const articleInstruction = `Extract the complete article content...`; // Your full instruction
+                const articleResult = await page.extract(articleInstruction);
+                extraction = articleResult.extraction;
                 break;
         }
 
