@@ -6,7 +6,9 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^2.4.3",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "axios": "^1.7.2",
+    "pdf-parse": "^1.1.1"
   },
   "scripts": {
     "start": "node api/scrape.js"
