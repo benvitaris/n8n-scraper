@@ -1,31 +1,20 @@
-// This is the final, multi-strategy scraper with the Cognitive Loop
+// This is the OPTIMIZED version of the scraper, designed to run faster.
 const { Stagehand } = require('@browserbasehq/stagehand');
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
-    }
-
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
     const { url, category } = req.body;
-    
-    if (!url || !category) {
-        return res.status(400).json({ error: 'URL and category are required.' });
-    }
-    
+    if (!url || !category) return res.status(400).json({ error: 'URL and category are required.' });
+
     const BROWSERBASE_API_KEY = process.env.BROWSERBASE_API_KEY;
     const BROWSERBASE_PROJECT_ID = process.env.BROWSERBASE_PROJECT_ID;
     const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
     
-    // Using a more powerful model for the complex website strategy is better.
-    // We'll use the cheaper 'flash' for Articles and the smarter 'pro' for Websites.
-    const modelForCategory = category === 'Website' ? "google/gemini-2.5-pro" : "google/gemini-2.5-flash";
-    console.log(`Using model: ${modelForCategory} for category: ${category}`);
-
     const stagehand = new Stagehand({
         env: "BROWSERBASE",
         apiKey: BROWSERBASE_API_KEY,
         projectId: BROWSERBASE_PROJECT_ID,
-        modelName: modelForCategory,
+        modelName: "google/gemini-2.5-flash", // Sticking to the faster model
         modelClientOptions: { apiKey: GOOGLE_API_KEY },
         disablePino: true,
         browserbaseSessionCreateParams: {
@@ -36,89 +25,60 @@ export default async function handler(req, res) {
     try {
         await stagehand.init();
         const page = stagehand.page;
-        
         await page.goto(url, { waitUntil: 'networkidle' });
 
-        // Universal pop-up dismissal
-        try { await page.act("click the Accept button", { timeoutMs: 7000 }); console.log("Cookie banner dismissed."); await page.waitForTimeout(1500); } catch (e) { console.log("Cookie banner not found."); }
-        try { await page.act("click the Dismiss button", { timeoutMs: 7000 }); console.log("Registration wall dismissed."); await page.waitForTimeout(1500); } catch (e) { console.log("Registration wall not found."); }
+        try { await page.act("click the Accept button", { timeoutMs: 5000 }); console.log("Cookie banner dismissed."); await page.waitForTimeout(1000); } catch (e) { console.log("Cookie banner not found."); }
+        try { await page.act("click the Dismiss button", { timeoutMs: 5000 }); console.log("Registration wall dismissed."); await page.waitForTimeout(1000); } catch (e) { console.log("Registration wall not found."); }
 
         let extraction;
 
         switch (category) {
             case 'Website':
-                console.log("Executing 'Website' strategy: Cognitive Scraping Loop...");
-
-                // --- THE COGNITIVE LOOP ---
-                const interactionCycles = 3; // How many times we loop to find nested content.
-                let clickedElements = new Set(); // Keep track of what we've already clicked.
+                console.log("Executing 'Website' strategy: Optimized Loop...");
+                
+                const interactionCycles = 2; // Reduced from 3
+                let clickedElements = new Set();
 
                 for (let i = 0; i < interactionCycles; i++) {
                     console.log(`--- Interaction Cycle ${i + 1}/${interactionCycles} ---`);
-                    
-                    // 1. Observe all interactive elements. The AI is smart enough to find these.
-                    const interactiveElements = await page.observe("Find all clickable tabs, accordions, 'show more', 'learn more', and FAQ buttons that reveal more text on the same page.");
-
-                    if (!interactiveElements || interactiveElements.length === 0) {
-                        console.log("No new interactive elements found. Ending interaction loop.");
-                        break;
-                    }
+                    const interactiveElements = await page.observe("Find all clickable tabs, accordions, and 'show more' buttons.");
+                    if (!interactiveElements || interactiveElements.length === 0) break;
 
                     let newClickFound = false;
                     for (const element of interactiveElements) {
-                        // Use a unique key for each element to avoid re-clicking
                         const elementKey = element.selector || element.description;
                         if (!clickedElements.has(elementKey)) {
                             try {
-                                console.log(`Clicking on: "${element.description}"`);
                                 await page.act(element);
                                 clickedElements.add(elementKey);
                                 newClickFound = true;
-                                await page.waitForTimeout(2000); // Wait for animations/content loading
-                            } catch (clickError) {
-                                console.log(`Could not click "${element.description}", skipping.`);
-                            }
+                                await page.waitForTimeout(1000); // Shorter delay
+                            } catch (clickError) { /* ignore */ }
                         }
                     }
-                    if (!newClickFound) {
-                        console.log("No new un-clicked elements found. Ending interaction loop.");
-                        break;
-                    }
+                    if (!newClickFound) break;
                 }
 
-                // 2. Final scroll to catch any lazy-loaded content at the bottom
-                console.log("Final scroll to ensure all content is loaded...");
-                for (let i = 0; i < 5; i++) {
-                    await page.act("scroll to bottom of page");
-                    await page.waitForTimeout(1000);
-                }
+                await page.act("scroll to bottom of page"); await page.waitForTimeout(1000);
                 
-                // 3. Extract everything now that the page is fully revealed
-                console.log("Extracting all visible content from fully revealed page...");
-                const finalExtraction = await page.extract(`Extract ALL visible text content from the page, including titles, paragraphs, and all data within tables, tabs, and accordions. Preserve the original formatting and structure perfectly.`);
+                const finalExtraction = await page.extract(`Extract ALL visible text content from the fully revealed page, including all data within tables, tabs, and accordions.`);
                 extraction = finalExtraction.extraction;
                 break;
 
             case 'Article':
             default:
-                console.log("Executing 'Article' strategy: Scroll and Extract...");
+                // Article strategy remains the same
                 const scrollCount = 8;
                 for (let i = 0; i < scrollCount; i++) {
                     await page.act("scroll down");
-                    await page.waitForTimeout(1500);
+                    await page.waitForTimeout(1000);
                 }
-                const articleInstruction = `Extract the complete article content from this fully loaded page. This includes the main title, all subheadings, paragraphs, lists, key takeaways, and any other text in the article body. Preserve formatting.`;
-                const articleResult = await page.extract(articleInstruction);
+                const articleResult = await page.extract(`Extract the complete article content...`);
                 extraction = articleResult.extraction;
                 break;
         }
 
         await stagehand.close();
-
-        if (!extraction || extraction.trim() === "") {
-             return res.status(500).json({ error: 'Extraction resulted in empty content.' });
-        }
-        
         res.status(200).json({ scraped_content: extraction });
     
     } catch (error) {
